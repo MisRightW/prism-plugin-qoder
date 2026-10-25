@@ -1,0 +1,36 @@
+{
+  "name": "qoder-prism-bridge",
+  "displayName": "Prism Bridge for Qoder IDE",
+  "publisher": "misrightw",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local-only context bridge between Prism Hub and Qoder IDE.",
+  "engines": {
+    "vscode": "^1.106.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished", "onCommand:qoderPrism.startBridge", "onCommand:qoderPrism.stopBridge"],
+  "main": "./dist/extension.js",
+  "files": [
+    "dist/",
+    "README.md",
+    "package.json"
+  ],
+  "contributes": {
+    "commands": [
+      { "command": "qoderPrism.startBridge", "title": "Prism: 启动 Qoder IDE 本地桥接" },
+      { "command": "qoderPrism.stopBridge", "title": "Prism: 停止 Qoder IDE 本地桥接" }
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "package": "npm run build && vsce package --out qoder-prism-bridge.vsix",
+    "test": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.106.0",
+    "@vscode/vsce": "^3.6.0",
+    "typescript": "^5.7.0"
+  }
+}

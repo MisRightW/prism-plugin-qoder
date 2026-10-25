@@ -1,0 +1,8 @@
+node_modules/
+ide-bridge/node_modules/
+ide-bridge/dist/
+ide-bridge/*.vsix
+release/
+release-artifacts/
+coverage/
+.DS_Store

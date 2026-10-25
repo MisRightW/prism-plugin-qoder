@@ -1,0 +1,64 @@
+name: 验证并发布 Prism Qoder 插件
+
+on:
+  pull_request:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: macos-arm64
+            runner: macos-14
+          - target: macos-x64
+            runner: macos-13
+          - target: windows-x64
+            runner: windows-latest
+          - target: linux-x64
+            runner: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org/
+      - run: npm ci --registry=https://registry.npmjs.org/
+      - run: npm --prefix ide-bridge ci --registry=https://registry.npmjs.org/
+      - run: npm test
+      - run: npm run verify-release
+      - run: npm run build:ide
+      - run: npm run package:ide
+      - run: npm run probe
+      - run: npm run stage-release
+        env:
+          PRISM_PLATFORM: ${{ matrix.target }}
+      - run: node scripts/archive-release.mjs ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qoder-${{ matrix.target }}
+          path: |
+            release-artifacts/*.tar.gz
+            ide-bridge/*.vsix
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+      - run: node scripts/create-release-metadata.mjs release-artifacts
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" release-artifacts/* --title "Qoder ${{ github.ref_name }}" --generate-notes
