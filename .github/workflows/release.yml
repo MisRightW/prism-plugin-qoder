@@ -4,9 +4,16 @@ on:
   pull_request:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: qoder-release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
+    name: ${{ matrix.target }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -14,51 +21,71 @@ jobs:
           - target: macos-arm64
             runner: macos-14
           - target: macos-x64
-            runner: macos-13
+            runner: macos-15-intel
           - target: windows-x64
-            runner: windows-latest
+            runner: windows-2022
           - target: linux-x64
-            runner: ubuntu-latest
+            runner: ubuntu-22.04
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    env:
+      PRISM_PLATFORM: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org/
-      - run: npm ci --registry=https://registry.npmjs.org/
-      - run: npm --prefix ide-bridge ci --registry=https://registry.npmjs.org/
-      - run: npm test
-      - run: npm run verify-release
-      - run: npm run build:ide
-      - run: npm run package:ide
-      - run: npm run probe
-      - run: npm run stage-release
-        env:
-          PRISM_PLATFORM: ${{ matrix.target }}
-      - run: node scripts/archive-release.mjs ${{ matrix.target }}
+          node-version: 22.23.1
+          registry-url: https://registry.npmmirror.com/
+          cache: npm
+      - name: 检查锁文件
+        shell: bash
+        run: test -f package-lock.json && test -f ide-bridge/package-lock.json
+      - name: 安装锁定依赖
+        run: |
+          npm ci
+          npm --prefix ide-bridge ci
+      - name: 构建并测试
+        run: |
+          npm test
+          npm run verify-release
+          npm run build:ide
+          npm run package:ide
+      - name: 在目标 runner 执行协议探测
+        run: npm run probe
+      - name: 移除开发依赖
+        run: npm prune --omit=dev
+      - name: 暂存目标平台包
+        shell: bash
+        run: |
+          npm run stage-release
+          node scripts/archive-release.mjs "$PRISM_PLATFORM"
       - uses: actions/upload-artifact@v4
         with:
-          name: qoder-${{ matrix.target }}
-          path: |
-            release-artifacts/*.tar.gz
-            ide-bridge/*.vsix
+          name: release-${{ matrix.target }}
+          path: release-artifacts/*.tar.gz
+          if-no-files-found: error
+
   release:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: github.ref_type == 'tag'
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 22.23.1
       - uses: actions/download-artifact@v4
         with:
+          pattern: release-*
           path: release-artifacts
           merge-multiple: true
-      - run: node scripts/create-release-metadata.mjs release-artifacts
-      - env:
+      - name: 生成并校验发布元数据
+        run: node scripts/create-release-metadata.mjs release-artifacts
+      - name: 创建 GitHub Release
+        env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" release-artifacts/* --title "Qoder ${{ github.ref_name }}" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" release-artifacts/* --verify-tag --title "Qoder $GITHUB_REF_NAME" --generate-notes
