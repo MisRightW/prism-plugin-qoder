@@ -4,7 +4,7 @@ display_name: Qoder
 description: Runs Qoder Agent sessions through the official Qoder Agent SDK and optionally bridges Qoder IDE context locally.
 icon_url: https://registry.npmmirror.com/@lobehub/icons-static-avatar/latest/files/avatars/qoder.webp
 icon_svg_url: https://registry.npmmirror.com/@lobehub/icons-static-svg/latest/files/icons/qoder.svg
-version: 0.1.0
+version: 0.1.1
 plugin_protocol_version: "4"
 min_hub_version: 0.1.0
 integration_mode: protocol-native
