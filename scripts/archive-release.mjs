@@ -1,8 +1,9 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
+import { projectRoot } from "../src/path-utils.js";
 
-const root = resolve(new URL("..", import.meta.url).pathname);
+const root = projectRoot(import.meta.url);
 const target = process.argv[2];
 const artifacts = resolve(root, process.argv[3] || "release-artifacts");
 const manifest = await readFile(resolve(root, "pluginbridge-plugin.yaml"), "utf8");

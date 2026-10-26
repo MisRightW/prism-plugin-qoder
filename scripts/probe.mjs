@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { resolve } from "node:path";
+import { projectRoot } from "../src/path-utils.js";
 
-const root = resolve(new URL("..", import.meta.url).pathname);
+const root = projectRoot(import.meta.url);
 const child = spawn(process.execPath, ["index.js"], { cwd: root, stdio: ["pipe", "pipe", "pipe"] });
 let stderr = "";
 child.stderr.setEncoding("utf8");

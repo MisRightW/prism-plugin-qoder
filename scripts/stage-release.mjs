@@ -1,7 +1,8 @@
 import { cp, mkdir, readFile, rm } from "node:fs/promises";
 import { resolve } from "node:path";
+import { projectRoot } from "../src/path-utils.js";
 
-const root = resolve(new URL("..", import.meta.url).pathname);
+const root = projectRoot(import.meta.url);
 const platform = process.env.PRISM_PLATFORM;
 const manifest = await readFile(resolve(root, "pluginbridge-plugin.yaml"), "utf8");
 const id = manifest.match(/^id:\s*(.+)$/m)?.[1]?.trim();

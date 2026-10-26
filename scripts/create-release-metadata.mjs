@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { projectRoot } from "../src/path-utils.js";
 
-const root = resolve(new URL("..", import.meta.url).pathname);
+const root = projectRoot(import.meta.url);
 const artifacts = resolve(root, process.argv[2] || "release-artifacts");
 const manifest = await readFile(resolve(root, "pluginbridge-plugin.yaml"), "utf8");
 const field = (name) => manifest.match(new RegExp(`^${name}:\\s*(.+)$`, "m"))?.[1]?.trim().replace(/^(?:"|')|(?:"|')$/g, "");
