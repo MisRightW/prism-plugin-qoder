@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { accessSync, constants } from "node:fs";
+import { accessSync, constants, readdirSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 
 function now() {
@@ -112,7 +113,8 @@ function inputChannel() {
 export class QoderClient {
   constructor({ sdkLoader = () => import("@qoder-ai/qoder-agent-sdk"), executablePath = process.env.PRISM_QODER_CLI_PATH || "" } = {}) {
     this.sdkLoader = sdkLoader;
-    this.executablePath = executablePath;
+    this.executablePath = executablePath || findQoderCLIPath();
+    if (this.executablePath) process.env.QODERCLI_PATH = this.executablePath;
     this.runs = new Map();
   }
 
@@ -130,22 +132,14 @@ export class QoderClient {
         return { available: false, reason: `PRISM_QODER_CLI_PATH 不可执行：${this.executablePath}` };
       }
     }
-    if (!this.executablePath && !process.env.QODER_PERSONAL_ACCESS_TOKEN && !this.findQoderCLIOnPath()) {
-      return { available: false, reason: "未找到已登录的 qodercli；请设置 QODER_PERSONAL_ACCESS_TOKEN，或安装并登录 Qoder CLI" };
+    if (!this.executablePath && !process.env.QODER_PERSONAL_ACCESS_TOKEN) {
+      return { available: false, reason: "未发现 Qoder IDE 登录态；请安装并登录 Qoder IDE，或设置 QODER_PERSONAL_ACCESS_TOKEN" };
     }
     return { available: true, reason: "" };
   }
 
   findQoderCLIOnPath() {
-    const names = process.platform === "win32" ? ["qodercli.exe", "qodercli.cmd", "qodercli"] : ["qodercli"];
-    return String(process.env.PATH || "").split(delimiter).some((directory) => names.some((name) => {
-      try {
-        accessSync(join(directory, name), constants.X_OK);
-        return true;
-      } catch {
-        return false;
-      }
-    }));
+    return Boolean(findQoderCLIPath());
   }
 
   async sdk() {
@@ -308,4 +302,45 @@ export class QoderClient {
   }
 }
 
-export const __test = { findSessionID, textFromContent };
+export const __test = { findSessionID, textFromContent, findQoderCLIPath };
+
+function findQoderCLIPath({ pathValue = process.env.PATH, homeDirectory = homedir(), platform = process.platform } = {}) {
+  const names = platform === "win32" ? ["qodercli.exe", "qodercli.cmd", "qodercli"] : ["qodercli"];
+  const pathEntries = String(pathValue || "").split(delimiter).filter(Boolean);
+  for (const directory of pathEntries) {
+    for (const name of names) {
+      const candidate = join(directory, name);
+      if (isExecutable(candidate)) return candidate;
+    }
+  }
+
+  const bundledDirectory = join(homeDirectory, ".qoder", "bin", "qodercli");
+  const bundledNames = platform === "win32" ? ["qodercli.exe", "qodercli.cmd", "qodercli"] : ["qodercli"];
+  for (const name of bundledNames) {
+    const candidate = join(bundledDirectory, name);
+    if (isExecutable(candidate)) return candidate;
+  }
+  try {
+    const suffix = platform === "win32" ? /^(?:qodercli|qodercli-).+\.exe$/i : /^(?:qodercli|qodercli-).+$/;
+    const candidates = readdirSync(bundledDirectory)
+      .filter((name) => suffix.test(name))
+      .sort()
+      .reverse();
+    for (const name of candidates) {
+      const candidate = join(bundledDirectory, name);
+      if (isExecutable(candidate)) return candidate;
+    }
+  } catch {
+    // Qoder IDE 未安装时忽略目录读取错误，后续继续使用 PAT 或报告不可用。
+  }
+  return "";
+}
+
+function isExecutable(path) {
+  try {
+    accessSync(path, constants.X_OK);
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}

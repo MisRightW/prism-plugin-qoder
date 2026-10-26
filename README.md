@@ -10,10 +10,10 @@
 ## 前置条件
 
 1. Hub 使用 Node 22 运行插件。
-2. 安装 Qoder CLI，并完成 `qodercli login`；或在 Hub 启动插件的环境中设置 `QODER_PERSONAL_ACCESS_TOKEN`。
-3. 当 CLI 不在 `PATH` 时，设置 `PRISM_QODER_CLI_PATH` 为可执行文件的绝对路径。
+2. 安装并登录 Qoder IDE 后，插件会自动发现 IDE 自带的 Qoder CLI；没有 IDE 时才需要单独安装 CLI，或设置 `QODER_PERSONAL_ACCESS_TOKEN`。
+3. 当自动发现失败时，可设置 `PRISM_QODER_CLI_PATH` 为可执行文件的绝对路径。
 
-仅安装或登录 Qoder Desktop 不满足以上认证条件。
+插件不会读取 IDE 的 Cookie 或私有数据库，只复用 Qoder 官方 CLI 支持的本机登录状态。
 
 ## 本地验证
 
@@ -23,7 +23,7 @@ npm test
 npm run probe
 ```
 
-`probe` 即使报告 `available=false` 也是协议成功：它表示本机尚未安装或登录 Qoder CLI。完成 CLI 登录后，Hub 会在下一次探测中自动显示为可用。
+`probe` 即使报告 `available=false` 也是协议成功：它表示本机没有可发现的 Qoder IDE/CLI 登录状态。安装并登录 Qoder IDE 后，Hub 会在下一次探测中自动显示为可用。
 
 ## Qoder IDE 桥接
 

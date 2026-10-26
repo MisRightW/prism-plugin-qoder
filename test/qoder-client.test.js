@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { QoderAdapter } from "../src/qoder-adapter.js";
 import { IdeBridgeClient } from "../src/ide-bridge-client.js";
-import { QoderClient } from "../src/qoder-client.js";
+import { QoderClient, __test } from "../src/qoder-client.js";
 
 function fakeSDK() {
   return {
@@ -84,4 +84,14 @@ test("IDE bridge 只向回环地址携带描述文件中的令牌", async () => 
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test("自动发现 Qoder IDE 提供的版本化 CLI", async () => {
+  const home = await mkdtemp(join(tmpdir(), "qoder-home-"));
+  const directory = join(home, ".qoder", "bin", "qodercli");
+  await mkdir(directory, { recursive: true });
+  const executable = join(directory, "qodercli-1.1.78");
+  await writeFile(executable, "#!/bin/sh\n");
+  await chmod(executable, 0o755);
+  assert.equal(__test.findQoderCLIPath({ pathValue: "", homeDirectory: home, platform: "darwin" }), executable);
 });

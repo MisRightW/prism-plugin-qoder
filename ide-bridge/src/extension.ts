@@ -84,7 +84,7 @@ async function startBridge(context: vscode.ExtensionContext): Promise<void> {
   if (server) return;
   bridgeToken = randomBytes(32).toString("base64url");
   // 使用稳定且私有的用户目录，Hub 无需获知 VS Code 的内部 globalStorage 路径。
-  const home = process.env.HOME || context.globalStorageUri.fsPath;
+  const home = process.env.USERPROFILE || process.env.HOME || context.globalStorageUri.fsPath;
   const descriptorDirectory = join(home, ".qoder", "prism");
   await mkdir(descriptorDirectory, { recursive: true, mode: 0o700 });
   descriptorPath = join(descriptorDirectory, "qoder-ide-bridge.json");
