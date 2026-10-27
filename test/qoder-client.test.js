@@ -64,6 +64,18 @@ test("Adapter 将原生会话目录与历史映射为 Prism 数据", async () =>
   assert.equal(history[0].Content, "你好");
 });
 
+test("QoderClient 列出跨工作区的完整会话目录", async () => {
+  let received;
+  const client = new QoderClient({
+    sdkLoader: async () => ({
+      query: () => {},
+      listSessions: async (options) => { received = options; return [{ sessionId: "all-workspaces", cwd: "/tmp/other-project" }]; },
+    }),
+  });
+  assert.deepEqual(await client.listSessions(), [{ sessionId: "all-workspaces", cwd: "/tmp/other-project" }]);
+  assert.equal(received, undefined);
+});
+
 test("IDE bridge 只向回环地址携带描述文件中的令牌", async () => {
   const token = randomUUID();
   const server = createServer((request, response) => {

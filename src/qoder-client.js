@@ -281,10 +281,11 @@ export class QoderClient {
       : { behavior: "deny", message: "已由 Prism 用户拒绝", toolUseID: approval.toolUseID });
   }
 
-  async listSessions(cwd = process.cwd()) {
+  async listSessions() {
     const sdk = await this.sdk();
     if (typeof sdk.listSessions !== "function") throw new Error("Qoder Agent SDK 不支持列出会话");
-    return sdk.listSessions({ dir: cwd });
+    // 不传 dir 才能返回 Qoder 用户在不同工作区创建的完整会话目录。
+    return sdk.listSessions();
   }
 
   async getSessionMessages(sessionID, cwd = process.cwd()) {
