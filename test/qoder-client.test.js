@@ -209,3 +209,18 @@ test("Qoder launcher 使用可覆盖的应用路径和 CDP 端口", () => {
   assert.equal(cdpBaseURL({ PRISM_QODER_CDP_PORT: "9555" }), "http://127.0.0.1:9555");
   assert.equal(cdpBaseURL({ PRISM_QODER_CDP_URL: "http://127.0.0.1:9666/" }), "http://127.0.0.1:9666");
 });
+
+test("Qoder Desktop 支持 Hub 标准 conversation.select", async () => {
+  let selected = "";
+  const client = {
+    controlSession: async (id, action) => {
+      assert.equal(action, "conversation.select");
+      selected = id;
+    },
+  };
+  const adapter = new QoderAdapter({ client, ideBridge: { status: async () => false } });
+  const result = await adapter.controlSession({ action: "conversation.select", session: { NativeSessionID: "session-select-1" } });
+  assert.equal(selected, "session-select-1");
+  assert.equal(result.thread_id, "session-select-1");
+  assert.equal(result.details.selected, true);
+});

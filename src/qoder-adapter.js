@@ -280,6 +280,12 @@ export class QoderAdapter {
 
   async controlSession(req) {
     const action = String(req?.action || "").toLowerCase();
+    if (action === "conversation.select") {
+      const id = sessionID(req.session);
+      if (!id) return { ok: false, action, message: "Qoder 会话选择缺少会话 ID", details_confirmed: true };
+      await this.client.controlSession(id, action, req?.target || {});
+      return { ok: true, action, thread_id: id, message: "Qoder Desktop 已选择会话", details: { selected: true }, details_confirmed: true };
+    }
     if (action === "ide.open_file") {
       const target = req?.target && typeof req.target === "object" ? req.target : {};
       const path = typeof target.path === "string" ? target.path : "";

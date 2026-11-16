@@ -515,6 +515,10 @@ export class QoderCdpClient {
   }
 
   async controlSession(id, action, target = {}) {
+    if (action === "conversation.select") {
+      await this.selectSession(id, target?.title || "");
+      return { selected: true, thread_id: id };
+    }
     if (action === "model.switch" || action === "reasoning.switch" || action === "permission.switch") {
       await this.selectControl(action, target);
     } else if (action === "interactive.surface.apply") {

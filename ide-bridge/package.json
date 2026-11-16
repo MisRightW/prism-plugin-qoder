@@ -2,7 +2,7 @@
   "name": "qoder-prism-bridge",
   "displayName": "Prism Bridge for Qoder IDE",
   "publisher": "misrightw",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "private": true,
   "description": "A local-only context bridge between Prism Hub and Qoder IDE.",
   "engines": {
