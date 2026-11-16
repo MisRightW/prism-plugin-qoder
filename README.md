@@ -2,19 +2,19 @@
 
 这个仓库提供 Qoder Desktop 的 Prism Hub 集成，默认通过本机 Chromium DevTools Protocol（CDP）控制已经登录的 Qoder 界面。
 
-插件在 Qoder Desktop 已经以 `--remote-debugging-port` 启动时自动连接；未发现端点时会尝试启动 Qoder Desktop，并探测 `9222`、`9223`、`9224`、`9225` 和 `9333`。插件不会读取 Qoder 的令牌、Cookie 或会话数据库，也不要求用户另外安装或登录 Qoder CLI。
+插件优先连接已经存在的 CDP 端点；未发现端点时会由插件内置 launcher 启动 Qoder Desktop，并等待 `9224` 端口就绪。Hub 的“重新托管”也通过清单中的 service 目标调用同一个 launcher。插件不会读取 Qoder 的令牌、Cookie 或会话数据库，也不要求用户另外安装或登录 Qoder CLI。
 
 ## 前置条件
 
 1. Hub 使用 Node 22 运行插件。
-2. Qoder Desktop 已经登录并保持打开。
-3. 如果 Qoder 是由其他启动器先打开的，首次使用前请退出 Qoder，再由 Hub 插件自动启动，或用以下方式启动：
+2. Qoder Desktop 已经完成登录；插件会复用本机登录状态。
+3. 如果 Qoder 已经以普通方式运行，插件 launcher 会在没有 CDP 时尝试优雅关闭该实例，再用 CDP 参数重新启动，以避免 Electron 单实例吞掉启动参数。
 
 ```bash
 /Applications/Qoder.app/Contents/MacOS/Qoder --remote-debugging-port=9224
 ```
 
-也可以在 Hub 插件环境中设置 `PRISM_QODER_CDP_URL` 为 CDP 页面 WebSocket 地址，或设置 `PRISM_QODER_CDP_PORT` 指定启动端口。
+也可以在 Hub 插件环境中设置 `PRISM_QODER_APP_PATH` 指定可执行文件，设置 `PRISM_QODER_CDP_PORT` 指定端口，或设置 `PRISM_QODER_CDP_URL` 连接外部 CDP。若不希望 launcher 关闭已有普通实例，可设置 `PRISM_QODER_RESTART_EXISTING=false`。
 
 ## 远程能力
 

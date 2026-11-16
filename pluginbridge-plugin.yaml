@@ -4,7 +4,7 @@ display_name: Qoder
 description: Controls Qoder Desktop through its local Chromium DevTools Protocol connection.
 icon_url: https://registry.npmmirror.com/@lobehub/icons-static-avatar/latest/files/avatars/qoder.webp
 icon_svg_url: https://registry.npmmirror.com/@lobehub/icons-static-svg/latest/files/icons/qoder.svg
-version: 0.1.8
+version: 0.1.9
 plugin_protocol_version: "4"
 min_hub_version: 0.1.0
 integration_mode: desktop-automation
@@ -25,6 +25,12 @@ runtime_operations:
     archive: unsupported
     delete: unsupported
 managed_launch: true
+managed_launch_specs:
+  - kind: service
+    start: ["node", "scripts/launch-qoder.mjs"]
+    ready: probe
+    ready_timeout_ms: 60000
+    runtime_modes: [desktop]
 runtime_dependencies:
   node: ">=22.0.0 <23.0.0"
 command: ["${runtime.node}", "--max-old-space-size=320", "index.js"]

@@ -3,7 +3,8 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { statSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 const { CdpPageClient } = createRequire(import.meta.url)("@rokid-prism/pluginbridge-plugin-sdk/cdp-runtime");
 
 const 默认端口 = [9222, 9223, 9224, 9225, 9333];
@@ -16,6 +17,10 @@ const 默认应用路径 = process.platform === "darwin"
 function 文本(value) { return typeof value === "string" ? value.trim() : ""; }
 function 等待(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function 错误文本(error) { return error instanceof Error ? error.message : String(error); }
+function 端口候选() {
+  const configured = Number(process.env.PRISM_QODER_CDP_PORT || 0);
+  return configured > 0 ? [configured, ...默认端口.filter((port) => port !== configured)] : 默认端口;
+}
 
 class 事件队列 {
   constructor() { this.events = []; this.waiters = []; this.finished = false; }
@@ -49,12 +54,16 @@ function 页面脚本() {
       const rect = node.getBoundingClientRect();
       return rect.width > 0 && rect.height > 0;
     };
-    const identity = (node, index) => String(
+    const identity = (node, index) => {
+      const raw = String(
       node?.getAttribute('data-session-id') || node?.getAttribute('data-sessionid') ||
       node?.getAttribute('data-conversation-id') || node?.getAttribute('data-thread-id') ||
       node?.getAttribute('data-id') || node?.getAttribute('data-row-key') ||
       node?.getAttribute('href') || ''
-    ).replace(/^.*(?:session|conversation|thread)[/:=]/i, '').trim() || 'ui-' + index;
+      ).replace(/^.*(?:session|conversation|thread)[/:=]/i, '').trim();
+      const routeID = raw.match(/#\\/chat\\/([^?/#]+)/i)?.[1];
+      return routeID || raw || 'ui-' + index;
+    };
     const rows = Array.from(document.querySelectorAll(
       '[data-session-id], [data-sessionid], [data-conversation-id], [data-thread-id], [data-row-key^="session:"], a[href*="session"], a[href*="conversation"], [role="treeitem"]'
     )).filter(visible);
@@ -153,7 +162,7 @@ export class QoderCdpClient {
   async resolvePage() {
     const candidates = [];
     if (this.endpoint) candidates.push(this.endpoint);
-    for (const port of 默认端口) candidates.push(`http://127.0.0.1:${port}`);
+    for (const port of 端口候选()) candidates.push(`http://127.0.0.1:${port}`);
     for (const candidate of candidates) {
       try {
         if (/^wss?:\/\//i.test(candidate)) return { webSocketDebuggerUrl: candidate, source: "环境变量" };
@@ -180,7 +189,7 @@ export class QoderCdpClient {
   async resolvePageWithoutLaunch() {
     const candidates = [];
     if (this.endpoint) candidates.push(this.endpoint);
-    for (const port of 默认端口) candidates.push(`http://127.0.0.1:${port}`);
+    for (const port of 端口候选()) candidates.push(`http://127.0.0.1:${port}`);
     for (const candidate of candidates) {
       if (/^wss?:\/\//i.test(candidate)) return { webSocketDebuggerUrl: candidate, source: "环境变量" };
       const base = candidate.replace(/\/$/, "");
@@ -194,12 +203,11 @@ export class QoderCdpClient {
   }
 
   async startApplication() {
-    if (this.launchProcess && !this.launchProcess.killed) return;
-    const executable = process.env.PRISM_QODER_APP_PATH || 默认应用路径;
-    if (process.platform !== "linux" && !existsSync(executable)) throw new Error(`找不到 Qoder Desktop：${executable}`);
-    const port = Number(process.env.PRISM_QODER_CDP_PORT || 9224);
-    const args = [`--remote-debugging-port=${port}`, "--no-first-run"];
-    this.launchProcess = spawn(executable, args, { detached: true, stdio: "ignore", env: { ...process.env } });
+    if (this.launchProcess && !this.launchProcess.killed && this.launchProcess.exitCode === null) return;
+    const launcher = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "launch-qoder.mjs");
+    const args = [launcher];
+    this.launchProcess = spawn(process.execPath, args, { detached: true, stdio: "ignore", env: { ...process.env, PRISM_QODER_APP_PATH: process.env.PRISM_QODER_APP_PATH || 默认应用路径 } });
+    this.launchProcess.once("exit", () => { this.launchProcess = null; });
     this.launchProcess.unref();
   }
 
@@ -210,6 +218,9 @@ export class QoderCdpClient {
     try {
       await page.connectToPage(info.webSocketDebuggerUrl);
       return await callback(page, info);
+    } catch (error) {
+      this.pageInfo = null;
+      throw error;
     } finally {
       await page.close();
     }

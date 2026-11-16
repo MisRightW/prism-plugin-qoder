@@ -8,6 +8,7 @@ import test from "node:test";
 import { QoderAdapter } from "../src/qoder-adapter.js";
 import { IdeBridgeClient } from "../src/ide-bridge-client.js";
 import { QoderClient, __test } from "../src/qoder-client.js";
+import { cdpBaseURL, qoderExecutable } from "../scripts/launch-qoder.mjs";
 
 function fakeSDK() {
   return {
@@ -200,4 +201,11 @@ test("自动发现 Qoder IDE 提供的版本化 CLI", async () => {
   await writeFile(executable, "#!/bin/sh\n");
   await chmod(executable, 0o755);
   assert.equal(__test.findQoderCLIPath({ pathValue: "", homeDirectory: home, platform: "darwin" }), executable);
+});
+
+test("Qoder launcher 使用可覆盖的应用路径和 CDP 端口", () => {
+  assert.equal(qoderExecutable({ PRISM_QODER_APP_PATH: "/tmp/Qoder" }, "darwin"), "/tmp/Qoder");
+  assert.equal(qoderExecutable({}, "darwin"), "/Applications/Qoder.app/Contents/MacOS/Qoder");
+  assert.equal(cdpBaseURL({ PRISM_QODER_CDP_PORT: "9555" }), "http://127.0.0.1:9555");
+  assert.equal(cdpBaseURL({ PRISM_QODER_CDP_URL: "http://127.0.0.1:9666/" }), "http://127.0.0.1:9666");
 });

@@ -12,7 +12,7 @@ if (!platform || !id || !version) throw new Error("需要 PRISM_PLATFORM、插�
 const destination = resolve(root, "release", `${id}-${version}-${platform}`);
 await rm(destination, { recursive: true, force: true });
 await mkdir(destination, { recursive: true });
-for (const entry of ["index.js", "src", "node_modules", "package.json", "package-lock.json", "pluginbridge-plugin.yaml", "README.md", "LICENSE"]) {
+for (const entry of ["index.js", "src", "scripts", "node_modules", "package.json", "package-lock.json", "pluginbridge-plugin.yaml", "README.md", "LICENSE"]) {
   await cp(resolve(root, entry), resolve(destination, entry), { recursive: true });
 }
 const vsix = resolve(root, "ide-bridge", "qoder-prism-bridge.vsix");
