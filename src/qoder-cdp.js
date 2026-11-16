@@ -46,8 +46,9 @@ function 受控附件(attachments = []) {
   });
 }
 
-function 页面脚本() {
-  return `(() => {
+function 页面脚本(包含控件 = false) {
+  return `(async () => {
+    const collectControls = ${包含控件 ? "true" : "false"};
     const text = (node) => String(node?.innerText || node?.textContent || '').trim();
     const visible = (node) => {
       if (!(node instanceof HTMLElement)) return false;
@@ -135,11 +136,57 @@ function 页面脚本() {
       current_permission: permission,
       permission_options: optionList('select[data-permission] option, [data-control="permission"] [data-option-id], [data-permission-id]'),
     };
+    const readMenu = async (button, kind) => {
+      if (!(button instanceof HTMLElement)) return { current: null, options: [] };
+      button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const menus = visibleNodes('[role="menu"], [role="listbox"]');
+      const menu = menus.at(-1);
+      const currentLabel = text(button).split('\\n')[0];
+      const options = menu ? Array.from(menu.querySelectorAll('[role="menuitem"], [role="option"]')).filter(visible).map((node, index) => {
+        const label = text(node).split('\\n')[0];
+        return {
+          option_id: String(node.getAttribute('data-option-id') || node.getAttribute('data-value') || node.getAttribute('value') || kind + '-' + index),
+          label,
+          selected: Boolean(node.getAttribute('data-selected') === 'true' || node.getAttribute('aria-selected') === 'true' || node.getAttribute('aria-checked') === 'true' || label === currentLabel),
+          disabled: Boolean(node.getAttribute('data-disabled') === 'true' || node.getAttribute('aria-disabled') === 'true'),
+        };
+      }).filter((item) => item.label && !/模型管理|管理模型/i.test(item.label)) : [];
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      const current = options.find((item) => item.selected) || (currentLabel ? { option_id: '', label: currentLabel, disabled: false } : null);
+      return { current, options };
+    };
+    if (collectControls) {
+      const modelMenu = await readMenu(visibleNodes('button[aria-label="模型"]')[0], 'model');
+      const permissionMenu = await readMenu(visibleNodes('button[aria-label="访问权限"]')[0], 'permission');
+      controls.current_model = controls.current_model || modelMenu.current;
+      controls.model_options = controls.model_options.length ? controls.model_options : modelMenu.options;
+      controls.current_permission = controls.current_permission || permissionMenu.current;
+      controls.permission_options = controls.permission_options.length ? controls.permission_options : permissionMenu.options;
+    }
+    const conversation = document.querySelector('[data-testid="conversation"], [data-testid="content"]');
+    const messages = Array.from(conversation?.querySelectorAll('[data-chat-turn]') || []).map((turn, index) => {
+      const userNode = turn.querySelector('[data-message-kind="user"] [data-chat-message-text], [data-user-message="true"] [data-chat-message-text]');
+      const assistantNode = turn.querySelector('[data-message-kind="assistant"]');
+      const assistantParts = Array.from(assistantNode?.querySelectorAll('[data-chat-message-text]') || []).map(text).filter(Boolean);
+      const turnID = String(turn.getAttribute('data-message-id') || turn.getAttribute('data-chat-turn') || 'turn-' + index).replace(/^turn:/, '');
+      return {
+        user: userNode ? { id: String(userNode.closest('[data-message-id]')?.getAttribute('data-message-id') || turnID), content: text(userNode) } : null,
+        assistant: assistantParts.length ? { id: 'assistant:' + turnID, content: assistantParts.join('\\n') } : null,
+      };
+    }).filter((item) => item.user || item.assistant);
+    const busy = visibleNodes('button, [role="button"]').some((node) => /stop|停止|cancel|取消/i.test(String(node.getAttribute('aria-label') || node.getAttribute('title') || node.innerText || '')) && !node.disabled);
     return {
       title: text(document.querySelector('h1, [role="heading"]')),
       body: text(document.body),
+      messages,
+      busy,
       sessions,
-      selected: sessions.find((item) => item.selected) || null,
+      selected: sessions.find((item) => item.selected) || (() => {
+        const routeID = location.hash.match(/#\\/chat\\/([^?/#]+)/i)?.[1] || '';
+        const route = sessions.find((item) => item.id === routeID);
+        return route ? { ...route, selected: true } : null;
+      })(),
       controls,
       approval,
       interactive_surface: interactiveSurface,
@@ -240,7 +287,7 @@ export class QoderCdpClient {
 
   async listSessions() {
     const state = await this.inspect();
-    return (state.sessions || []).map((item) => ({ sessionId: item.id, title: item.title, summary: item.title, cwd: "", selected: item.selected }));
+    return (state.sessions || []).map((item) => ({ sessionId: item.id, title: item.title, summary: item.title, cwd: "", selected: Boolean(item.selected || item.id === state.selected?.id) }));
   }
 
   async selectSession(id, title = "") {
@@ -257,8 +304,9 @@ export class QoderCdpClient {
         });
         if (!(match instanceof HTMLElement)) return { changed: false };
         match.click();
-        await new Promise((resolve) => setTimeout(resolve, 180));
-        return { changed: true };
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        const routeID = location.hash.match(/#\\/chat\\/([^?/#]+)/i)?.[1] || '';
+        return { changed: routeID === expectedID || !routeID, selected: routeID };
       })()`);
       if (!result?.changed) throw new Error("Qoder 页面中找不到目标会话");
       return result;
@@ -345,14 +393,20 @@ export class QoderCdpClient {
 
   async waitForVisibleReply(run, prompt) {
     let previous = "";
-    for (let i = 0; i < 80; i += 1) {
+    let stablePolls = 0;
+    for (let i = 0; i < 600; i += 1) {
       await 等待(500);
       try {
         const state = await this.inspect();
-        const body = 文本(state.body);
-        if (body && body !== previous && !body.includes(prompt)) {
-          previous = body;
-          run.summary = body.slice(-2000);
+        if (state.selected?.id && state.selected.id !== run.id) continue;
+        const assistant = [...(state.messages || [])].reverse().find((item) => item.assistant)?.assistant;
+        const reply = 文本(assistant?.content);
+        if (reply && reply !== previous && !reply.includes(prompt)) {
+          previous = reply;
+          stablePolls = 0;
+          run.summary = reply.slice(-2000);
+        } else if (reply && reply === previous) {
+          stablePolls += 1;
         }
         if (state.approval && !run.pendingApprovals.has(state.approval.approval_request_id)) {
           run.pendingApprovals.set(state.approval.approval_request_id, state.approval);
@@ -360,7 +414,7 @@ export class QoderCdpClient {
           const approvalEvent = { ID: `qoder:cdp:approval:${state.approval.approval_request_id}`, Type: "approval.required", Status: "waiting_approval", Summary: state.approval.title || "Qoder 需要用户选择", Payload: { approval: state.approval }, CreatedAt: new Date().toISOString() };
           run.events.push(approvalEvent);
         }
-        if (i > 2 && run.summary && !state.approval) break;
+        if (i >= 8 && run.summary && stablePolls >= 6 && !state.busy && !state.approval) break;
       } catch { /* 页面刷新期间下一轮继续读取。 */ }
     }
     run.status = "completed";
@@ -392,7 +446,12 @@ export class QoderCdpClient {
     while (!this.closed && this.runs.get(run.id) === run) {
       try {
         const state = await this.inspect();
-        const body = 文本(state.body);
+        if (state.selected?.id && state.selected.id !== run.id) {
+          await 等待(750);
+          continue;
+        }
+        const assistant = [...(state.messages || [])].reverse().find((item) => item.assistant)?.assistant;
+        const body = 文本(assistant?.content || state.body);
         const currentFingerprint = createHash("sha256").update(body).digest("hex");
         if (fingerprint && currentFingerprint !== fingerprint && body) {
           run.summary = body.slice(-2000);
@@ -427,12 +486,18 @@ export class QoderCdpClient {
   async getSessionMessages(id) {
     await this.selectSession(id);
     const state = await this.inspect();
+    const messages = [];
+    for (const item of state.messages || []) {
+      if (item.user?.content) messages.push({ id: item.user.id, role: "user", content: item.user.content, created_at: new Date().toISOString() });
+      if (item.assistant?.content) messages.push({ id: item.assistant.id, role: "assistant", content: item.assistant.content, created_at: new Date().toISOString() });
+    }
+    if (messages.length) return messages.slice(-100);
     const blocks = String(state.body || "").split("\\n").map((item) => item.trim()).filter(Boolean);
     return blocks.slice(-100).map((content, index) => ({ id: `cdp-${id}-${index}`, role: index % 2 ? "assistant" : "user", content, created_at: new Date().toISOString() }));
   }
 
   async inspectDetails(sessionID = "") {
-    const state = await this.inspect();
+    const state = await this.withPage((page) => page.evaluate(页面脚本(true)));
     const run = sessionID && this.runs.get(sessionID);
     return {
       native_session_id: 文本(sessionID || state.selected?.id),
@@ -458,6 +523,29 @@ export class QoderCdpClient {
         const kind = ${JSON.stringify(kind)};
         const optionID = ${JSON.stringify(optionID)};
         const label = ${JSON.stringify(label)};
+        const button = kind === 'model' ? document.querySelector('button[aria-label="模型"]') : kind === 'permission' ? document.querySelector('button[aria-label="访问权限"]') : null;
+        if (button instanceof HTMLElement) {
+          button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          const menu = Array.from(document.querySelectorAll('[role="menu"], [role="listbox"]')).filter((node) => {
+            const rect = node.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          }).at(-1);
+          const menuItems = menu ? Array.from(menu.querySelectorAll('[role="menuitem"], [role="option"]')).filter((node) => {
+            const rect = node.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          }) : [];
+          const node = menuItems.find((item, index) => {
+            const values = [item.getAttribute('data-option-id'), item.getAttribute('data-value'), item.getAttribute('value'), item.innerText, item.getAttribute('aria-label'), kind + '-' + index].filter(Boolean).map(String);
+            return (optionID && values.includes(optionID)) || (label && values.some((value) => value.split('\\n')[0].trim() === label));
+          });
+          if (node instanceof HTMLElement) {
+            const rect = node.getBoundingClientRect();
+            return { changed: true, point: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } };
+          }
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          return { changed: false };
+        }
         const controls = Array.from(document.querySelectorAll('[data-control="' + kind + '"] [data-option-id], [data-' + kind + '-id], select[data-' + kind + '] option, [role="option"]'));
         const node = controls.find((item) => {
           const values = [item.getAttribute('data-option-id'), item.getAttribute('data-' + kind + '-id'), item.getAttribute('data-value'), item.value, item.innerText, item.getAttribute('aria-label')].filter(Boolean).map(String);
@@ -470,6 +558,10 @@ export class QoderCdpClient {
         return { changed: true };
       })()`);
       if (!result?.changed) throw new Error("Qoder 控件选项已失效或当前页面不可见");
+      if (result.point) {
+        await page.clickPoint(result.point);
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
       return result;
     });
   }
@@ -531,7 +623,27 @@ export class QoderCdpClient {
     return this.inspectDetails(id);
   }
 
-  async interrupt(id) { const run = this.get(id); run.status = "interrupted"; run.events.push({ ID: `qoder:cdp:interrupt:${randomUUID()}`, Type: "run.interrupted", Status: "interrupted", Summary: "Qoder 已中断", Payload: {}, CreatedAt: new Date().toISOString() }); run.events.close(); }
+  async interrupt(id) {
+    const run = this.get(id);
+    let clicked = false;
+    try {
+      await this.selectSession(id);
+      const result = await this.withPage((page) => page.evaluate(`(() => {
+        const visible = (node) => { const rect = node.getBoundingClientRect(); return rect.width > 0 && rect.height > 0; };
+        const button = Array.from(document.querySelectorAll('button, [role="button"]')).find((node) => visible(node) && !node.disabled && /stop|停止生成|取消生成|中断/i.test(String(node.getAttribute('aria-label') || node.getAttribute('title') || node.innerText || '')));
+        if (!(button instanceof HTMLElement)) return false;
+        button.click();
+        return true;
+      })()`));
+      clicked = Boolean(result);
+    } catch (error) {
+      if (run.status === "running") throw error;
+    }
+    if (!clicked && run.status === "running") throw new Error("Qoder 页面未提供可用的中断控件");
+    run.status = "interrupted";
+    run.events.push({ ID: `qoder:cdp:interrupt:${randomUUID()}`, Type: "run.interrupted", Status: "interrupted", Summary: "Qoder 已中断", Payload: {}, CreatedAt: new Date().toISOString() });
+    run.events.close();
+  }
   async waitForRun(id) { return this.get(id).completion; }
   async close() { this.closed = true; this.pageInfo = null; for (const run of this.runs.values()) run.events.close(); this.runs.clear(); }
 }

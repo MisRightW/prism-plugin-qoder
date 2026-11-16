@@ -4,7 +4,7 @@ display_name: Qoder
 description: Controls Qoder Desktop through its local Chromium DevTools Protocol connection.
 icon_url: https://registry.npmmirror.com/@lobehub/icons-static-avatar/latest/files/avatars/qoder.webp
 icon_svg_url: https://registry.npmmirror.com/@lobehub/icons-static-svg/latest/files/icons/qoder.svg
-version: 0.1.10
+version: 0.1.11
 plugin_protocol_version: "4"
 min_hub_version: 0.1.0
 integration_mode: desktop-automation
