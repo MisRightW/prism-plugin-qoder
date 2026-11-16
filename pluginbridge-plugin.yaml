@@ -1,22 +1,25 @@
 id: qoder
 schema_version: 1
 display_name: Qoder
-description: Runs Qoder Agent sessions through the official Qoder Agent SDK and optionally bridges Qoder IDE context locally.
+description: Controls Qoder Desktop through its local Chromium DevTools Protocol connection.
 icon_url: https://registry.npmmirror.com/@lobehub/icons-static-avatar/latest/files/avatars/qoder.webp
 icon_svg_url: https://registry.npmmirror.com/@lobehub/icons-static-svg/latest/files/icons/qoder.svg
-version: 0.1.3
+version: 0.1.8
 plugin_protocol_version: "4"
 min_hub_version: 0.1.0
-integration_mode: protocol-native
+integration_mode: desktop-automation
 runtime_integration:
-  native: protocol-native
+  desktop: desktop-automation
 transport: process
-runtime_modes: [native]
-default_runtime_mode: native
+runtime_modes: [desktop]
+default_runtime_mode: desktop
 runtime_controls:
-  native: {}
+  desktop:
+    model: stable
+    reasoning: stable
+    permission: stable
 runtime_operations:
-  native:
+  desktop:
     rename: unsupported
     pin: unsupported
     archive: unsupported
@@ -26,17 +29,17 @@ runtime_dependencies:
   node: ">=22.0.0 <23.0.0"
 command: ["${runtime.node}", "--max-old-space-size=320", "index.js"]
 capabilities:
-  native_visible_input: false
-  native_visible_output: false
+  native_visible_input: true
+  native_visible_output: true
   can_attach_session: true
   can_start_session_with_message: true
-  can_open_draft: false
+  can_open_draft: true
   can_list_sessions: true
   can_read_history: true
   can_interrupt: true
   can_approval: true
   can_forward_sync: true
-  can_reverse_sync: false
+  can_reverse_sync: true
   can_plugin_wide_watch: false
   can_wait_run: true
   can_read_status: true

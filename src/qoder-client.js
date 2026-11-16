@@ -55,8 +55,8 @@ class AsyncEvents {
     for (const resolve of this.waiters.splice(0)) resolve();
   }
 
-  async *iterate(signal) {
-    let cursor = 0;
+  async *iterate(signal, startAt = 0) {
+    let cursor = Math.max(0, Number(startAt) || 0);
     while (!signal?.aborted) {
       if (cursor < this.events.length) {
         yield this.events[cursor++];
@@ -202,6 +202,9 @@ export class QoderClient {
       summary: "",
       startedAt: now(),
       completion: null,
+      finished: false,
+      activeTurnID: "",
+      turns: new Map(),
     };
     run.completion = (async () => {
       try {
@@ -238,6 +241,7 @@ export class QoderClient {
         run.summary = error instanceof Error ? error.message : String(error);
         events.push({ ID: `qoder:pending:error:${randomUUID()}`, Type: "run.failed", Status: "failed", Summary: run.summary, Payload: {}, CreatedAt: now() });
       } finally {
+        run.finished = true;
         events.close();
         for (const approval of pendingApprovals.values()) approval.resolve({ behavior: "deny", message: "会话已结束", toolUseID: approval.toolUseID });
       }
@@ -261,8 +265,33 @@ export class QoderClient {
     return run;
   }
 
-  async send(sessionID, text) {
-    this.get(sessionID).channel.push(text);
+  async send(sessionID, text, turnID = "") {
+    const run = this.get(sessionID);
+    if (run.finished || run.events.finished) throw new Error("Qoder 会话已结束");
+    const currentTurnID = turnID || randomUUID();
+    this.registerTurn(sessionID, currentTurnID, { initial: false });
+    run.channel.push(text);
+    return currentTurnID;
+  }
+
+  registerTurn(sessionID, turnID, { initial = false } = {}) {
+    const run = this.get(sessionID);
+    const id = String(turnID || "").trim();
+    if (!id) throw new Error("Qoder 运行需要运行 ID");
+    run.turns.set(id, { cursor: initial ? 0 : run.events.events.length });
+    run.activeTurnID = id;
+    run.status = "running";
+    return id;
+  }
+
+  async waitForRun(sessionID, turnID) {
+    const run = this.get(sessionID);
+    const turn = run.turns.get(String(turnID || ""));
+    const cursor = turn?.cursor ?? 0;
+    for await (const event of run.events.iterate(undefined, cursor)) {
+      if (["completed", "failed", "interrupted"].includes(event.Status)) return event;
+    }
+    throw new Error("Qoder 会话在完成前关闭");
   }
 
   async interrupt(sessionID) {

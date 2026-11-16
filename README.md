@@ -1,19 +1,29 @@
 # Prism Plugin for Qoder
 
-这个仓库提供 Qoder 的 Prism Hub 集成，采用两个互补的公开接口：
+这个仓库提供 Qoder Desktop 的 Prism Hub 集成，默认通过本机 Chromium DevTools Protocol（CDP）控制已经登录的 Qoder 界面。
 
-- `native`：通过官方 `@qoder-ai/qoder-agent-sdk` 和 `qodercli` 托管 Qoder Agent 会话。
-- `ide-bridge`：一个 Qoder IDE VSIX，只在本机回环地址暴露工作区上下文和“打开文件”能力。
-
-插件不会读取 Qoder Desktop、Qoder IDE 或浏览器的登录令牌、Cookie 和会话数据库。Qoder CLI 登录是独立前置条件。
+插件在 Qoder Desktop 已经以 `--remote-debugging-port` 启动时自动连接；未发现端点时会尝试启动 Qoder Desktop，并探测 `9222`、`9223`、`9224`、`9225` 和 `9333`。插件不会读取 Qoder 的令牌、Cookie 或会话数据库，也不要求用户另外安装或登录 Qoder CLI。
 
 ## 前置条件
 
 1. Hub 使用 Node 22 运行插件。
-2. 安装并登录 Qoder IDE 后，插件会自动发现 IDE 自带的 Qoder CLI；没有 IDE 时才需要单独安装 CLI，或设置 `QODER_PERSONAL_ACCESS_TOKEN`。
-3. 当自动发现失败时，可设置 `PRISM_QODER_CLI_PATH` 为可执行文件的绝对路径。
+2. Qoder Desktop 已经登录并保持打开。
+3. 如果 Qoder 是由其他启动器先打开的，首次使用前请退出 Qoder，再由 Hub 插件自动启动，或用以下方式启动：
 
-插件不会读取 IDE 的 Cookie 或私有数据库，只复用 Qoder 官方 CLI 支持的本机登录状态。
+```bash
+/Applications/Qoder.app/Contents/MacOS/Qoder --remote-debugging-port=9224
+```
+
+也可以在 Hub 插件环境中设置 `PRISM_QODER_CDP_URL` 为 CDP 页面 WebSocket 地址，或设置 `PRISM_QODER_CDP_PORT` 指定启动端口。
+
+## 远程能力
+
+- 消息：通过当前 Qoder composer 发送，并通过页面正文轮询确认回复和终态。
+- 用户选项：读取页面声明的模型、推理和权限选项，Hub 使用 `model.switch`、`reasoning.switch`、`permission.switch` 控制并重新读取当前值。
+- 附件和图片：Hub 先将附件物化为受控本地文件，插件只通过页面的文件输入控件上传；历史和事件只返回文件名、MIME 类型和图片/文件类别，不返回路径或二进制。
+- 审批和交互面：读取当前可见的带原生请求标识的对话框，发布 `approval.required` 或 `interactive_surface`，只接受同一请求的 `approval_request_id + action_id` 回写。
+
+Qoder 页面未暴露稳定身份时，插件会安全返回目标失效，不按按钮文案、列表顺序或轮询序号猜测会话、审批或选项。
 
 ## 本地验证
 
@@ -23,7 +33,7 @@ npm test
 npm run probe
 ```
 
-`probe` 即使报告 `available=false` 也是协议成功：它表示本机没有可发现的 Qoder IDE/CLI 登录状态。安装并登录 Qoder IDE 后，Hub 会在下一次探测中自动显示为可用。
+`probe` 即使报告 `available=false` 也是协议成功：它表示当前没有可发现的 Qoder CDP 页面。启动带 CDP 参数的 Qoder Desktop 后，Hub 会在下一次探测中自动显示为可用。
 
 ## Qoder IDE 桥接
 

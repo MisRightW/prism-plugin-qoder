@@ -46,6 +46,75 @@ test("QoderClient 将 SDK 流转换为 Prism 运行事件", async () => {
   }
 });
 
+test("Qoder 连续发送时 waitForRun 不会复用上一轮终态", async () => {
+  const previous = process.env.QODER_PERSONAL_ACCESS_TOKEN;
+  process.env.QODER_PERSONAL_ACCESS_TOKEN = "test-token";
+  try {
+    const client = new QoderClient({
+      sdkLoader: async () => ({
+        accessTokenFromEnv: () => ({ type: "token" }),
+        query: ({ prompt }) => {
+          async function* stream() {
+            let first = true;
+            for await (const input of prompt) {
+              const text = input.message.content[0].text;
+              if (first) {
+                first = false;
+                yield { type: "system", session_id: "multi-turn-session" };
+              }
+              yield { type: "assistant", message: { content: [{ type: "text", text: `处理：${text}` }] } };
+              yield { type: "result", subtype: "success", result: `完成：${text}` };
+            }
+          }
+          const generator = stream();
+          generator.interrupt = async () => {};
+          generator.close = async () => {};
+          return generator;
+        },
+      }),
+    });
+    const adapter = new QoderAdapter({ client, ideBridge: { status: async () => false } });
+    const started = await adapter.startSessionWithMessage({
+      Cwd: "/tmp/project",
+      Message: { PrismMessageID: "m1", Text: "第一轮" },
+    });
+    const first = await adapter.waitForRun(started.Session, started.Receipt.NativeMessageID);
+    assert.equal(first.Summary, "完成：第一轮");
+    const secondReceipt = await adapter.send(started.Session, { PrismMessageID: "m2", Text: "第二轮" });
+    const second = await adapter.waitForRun(started.Session, secondReceipt.NativeMessageID);
+    assert.equal(second.Summary, "完成：第二轮");
+  } finally {
+    if (previous === undefined) delete process.env.QODER_PERSONAL_ACCESS_TOKEN;
+    else process.env.QODER_PERSONAL_ACCESS_TOKEN = previous;
+  }
+});
+
+test("Qoder live 历史流会推送新用户消息", async () => {
+  let history = [{ id: "m1", role: "user", content: "第一轮", created_at: "2026-01-01T00:00:00.000Z" }];
+  const adapter = new QoderAdapter({
+    client: {
+      getSessionMessages: async () => history,
+      availability: async () => ({ available: true, reason: "" }),
+    },
+    ideBridge: { status: async () => false },
+  });
+  const controller = new AbortController();
+  const iterator = adapter.readHistoryStream({ NativeSessionID: "session-1" }, { stream_id: "history-1", limit: 20, live: true }, controller.signal)[Symbol.asyncIterator]();
+  const initial = await iterator.next();
+  assert.equal(initial.value.type, "turn");
+  const pageEnd = await iterator.next();
+  assert.equal(pageEnd.value.type, "page_end");
+  history = [...history, { id: "m2", role: "user", content: "第二轮", created_at: "2026-01-01T00:01:00.000Z" }];
+  const update = await Promise.race([
+    iterator.next(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("live history 未推送新消息")), 1500)),
+  ]);
+  assert.equal(update.value.type, "turn");
+  assert.equal(update.value.source, "live");
+  assert.equal(update.value.turn.messages.at(-1).Content, "第二轮");
+  controller.abort();
+});
+
 test("Adapter 将原生会话目录与历史映射为 Prism 数据", async () => {
   const client = {
     availability: async () => ({ available: true, reason: "" }),
@@ -58,10 +127,35 @@ test("Adapter 将原生会话目录与历史映射为 Prism 数据", async () =>
   const adapter = new QoderAdapter({ client, ideBridge });
   const capability = await adapter.probe();
   assert.equal(capability.Available, true);
+  assert.equal(capability.CanControlSession, false);
   const sessions = await adapter.listSessions();
   assert.equal(sessions[0].NativeSessionID, "saved-1");
   const history = await adapter.readHistory({ NativeSessionID: "saved-1", Cwd: "/tmp/project" });
   assert.equal(history[0].Content, "你好");
+});
+
+test("Adapter 支持草稿打开并提交首条消息", async () => {
+  const client = {
+    availability: async () => ({ available: true, reason: "" }),
+    start: async ({ prompt, cwd }) => {
+      assert.equal(prompt, "通过草稿发送");
+      assert.equal(cwd, "/tmp/project");
+      return { sessionID: "draft-session-1" };
+    },
+  };
+  const adapter = new QoderAdapter({ client, ideBridge: { status: async () => false } });
+  const draft = await adapter.openDraft({ DraftID: "draft-1", Cwd: "/tmp/project" });
+  assert.equal(draft.DraftID, "draft-1");
+  assert.ok(draft.DraftFingerprint);
+  const started = await adapter.startDraftWithMessage({
+    DraftID: "draft-1",
+    Cwd: "/tmp/project",
+    Message: { PrismMessageID: "message-1", Text: "通过草稿发送" },
+  });
+  assert.equal(started.Session.NativeSessionID, "draft-session-1");
+  assert.equal(started.Receipt.Accepted, true);
+  assert.equal(started.Receipt.Visible, true);
+  assert.equal(started.Visibility.Visible, true);
 });
 
 test("QoderClient 列出跨工作区的完整会话目录", async () => {
