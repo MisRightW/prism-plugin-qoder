@@ -22,6 +22,15 @@ function 端口候选() {
   return configured > 0 ? [configured, ...默认端口.filter((port) => port !== configured)] : 默认端口;
 }
 
+function 选择页面(targets) {
+  const pages = (Array.isArray(targets) ? targets : []).filter((item) => item?.type === "page" && item.webSocketDebuggerUrl);
+  if (!pages.length) return null;
+  const identified = pages.find((item) => /qoder/i.test(`${item.title || ""} ${item.url || ""}`));
+  if (identified) return identified;
+  // Qoder 当前版本可能返回空的 title/url；端点只有一个页面时可安全认定为 Qoder。
+  return pages.length === 1 ? pages[0] : null;
+}
+
 class 事件队列 {
   constructor() { this.events = []; this.waiters = []; this.finished = false; }
   push(event) { if (this.finished) return; this.events.push(event); for (const wake of this.waiters.splice(0)) wake(); }
@@ -217,7 +226,7 @@ export class QoderCdpClient {
         const response = await this.fetcher(`${base}/json/list`, { signal: AbortSignal.timeout(1200) });
         if (!response.ok) continue;
         const targets = await response.json();
-        const page = Array.isArray(targets) && targets.find((item) => item?.type === "page" && item.webSocketDebuggerUrl && /qoder/i.test(`${item.title || ""} ${item.url || ""}`));
+        const page = 选择页面(targets);
         if (page) return { webSocketDebuggerUrl: page.webSocketDebuggerUrl, source: base, title: page.title || "" };
       } catch {
         // 端口未开启时继续探测其他候选端点。
@@ -243,7 +252,7 @@ export class QoderCdpClient {
       const response = await this.fetcher(`${base}/json/list`, { signal: AbortSignal.timeout(500) });
       if (!response.ok) continue;
       const targets = await response.json();
-      const page = Array.isArray(targets) && targets.find((item) => item?.type === "page" && item.webSocketDebuggerUrl && /qoder/i.test(`${item.title || ""} ${item.url || ""}`));
+      const page = 选择页面(targets);
       if (page) return { webSocketDebuggerUrl: page.webSocketDebuggerUrl, source: base, title: page.title || "" };
     }
     throw new Error("CDP 页面尚未就绪");

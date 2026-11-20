@@ -8,6 +8,7 @@ import test from "node:test";
 import { QoderAdapter } from "../src/qoder-adapter.js";
 import { IdeBridgeClient } from "../src/ide-bridge-client.js";
 import { QoderClient, __test } from "../src/qoder-client.js";
+import { QoderCdpClient } from "../src/qoder-cdp.js";
 import { cdpBaseURL, qoderExecutable } from "../scripts/launch-qoder.mjs";
 
 function fakeSDK() {
@@ -208,6 +209,27 @@ test("Qoder launcher 使用可覆盖的应用路径和 CDP 端口", () => {
   assert.equal(qoderExecutable({}, "darwin"), "/Applications/Qoder.app/Contents/MacOS/Qoder");
   assert.equal(cdpBaseURL({ PRISM_QODER_CDP_PORT: "9555" }), "http://127.0.0.1:9555");
   assert.equal(cdpBaseURL({ PRISM_QODER_CDP_URL: "http://127.0.0.1:9666/" }), "http://127.0.0.1:9666");
+});
+
+test("Qoder CDP 唯一空元数据页面仍可被探测", async () => {
+  const client = new QoderCdpClient({
+    launch: false,
+    fetcher: async (url) => {
+      assert.equal(url, "http://127.0.0.1:9224/json/list");
+      return {
+        ok: true,
+        json: async () => [{
+          type: "page",
+          title: "",
+          url: "",
+          webSocketDebuggerUrl: "ws://127.0.0.1:9224/devtools/page/qoder",
+        }],
+      };
+    },
+  });
+  const result = await client.availability();
+  assert.equal(result.available, true);
+  assert.equal(result.endpoint, "http://127.0.0.1:9224");
 });
 
 test("Qoder Desktop 支持 Hub 标准 conversation.select", async () => {
